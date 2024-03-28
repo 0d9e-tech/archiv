@@ -1,89 +1,67 @@
-// Package user manipulates the users.json file and provides a simple API for
+// Package user manipulates the users directory and provides a simple API for
 // the endpoints
 package user
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
+// All user data is stored in a directory. Each user has a file named after
+// their username. Username has to be [A-Za-z0-9_-]+
+
 type UserStore struct {
-	// username to hashed password
-	users map[string][64]byte
-	// path of the users file
+	// path of the users directory
 	path string
 }
 
-func (us UserStore) syncToDisk() error {
-	file, err := os.Create(us.path)
-	if err != nil {
-		return err
+func NewUserStore(path string) (us UserStore, err error) {
+	path = filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		err = fmt.Errorf("users directory has to be absolute path (is: %v)", path)
+	} else {
+		us = UserStore{path: path}
 	}
-
-	err = json.NewEncoder(file).Encode(us.users)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func LoadUsers(path string) (us UserStore, err error) {
-	us.path = filepath.Clean(path)
-
-	usersFile, err := os.OpenFile(us.path, os.O_RDWR, 0)
-	if err != nil {
-		return
-	}
-
-	if err = json.NewDecoder(usersFile).Decode(&us.users); err != nil {
-		err = fmt.Errorf("decode users file: %w", err)
-		return
-	}
-
 	return
 }
 
-func (us UserStore) CheckPassword(name string, pwd [64]byte) bool {
-	return us.users[name] == pwd
-}
+var usernameRegex = regexp.MustCompile("^[A-Za-z0-9_-]+$")
 
-func (us UserStore) CreateUser(name string, pwd [64]byte) error {
-	if _, ok := us.users[name]; ok {
-		return errors.New("username already used")
-	} else {
-		us.users[name] = pwd
-
-		err := us.syncToDisk()
-		if err != nil {
-			// undo the insert to keep the table consistent
-			delete(us.users, name)
-			return fmt.Errorf("createUser: %w", err)
-		}
-
-		return nil
+func usernameIsSane(username string) error {
+	if !usernameRegex.MatchString(username) {
+		return fmt.Errorf("username does not match the usernameRegex (is %v)", username)
 	}
-}
-
-func (us UserStore) DeleteUser(name string) error {
-	if _, ok := us.users[name]; !ok {
-		return errors.New("deleting unknown user")
-	}
-
-	pwd := us.users[name]
-	delete(us.users, name)
-
-	err := us.syncToDisk()
-	if err != nil {
-		// undo the delete to keep the table consistent
-		us.users[name] = pwd
-		return fmt.Errorf("deleteUser: %w", err)
-	}
-
-	// TODO: GC user files here?
-
 	return nil
+}
+
+func (fm *UserStore) Get(username string) (pwd [64]byte, err error) {
+	if err = usernameIsSane(username); err != nil {
+		return
+	}
+	filename := filepath.Join(fm.path, username)
+	content, err := os.ReadFile(filename) // #nosec G304: fm.path is trusted, username matches aggressive regex
+	if len(content) != 64 {
+		err = fmt.Errorf("corrupt user data (file %v)", filename)
+		return
+	}
+	if err == nil {
+		copy(pwd[:], content)
+	}
+	return
+}
+
+func (fm *UserStore) Set(username string, pwd [64]byte) error {
+	if err := usernameIsSane(username); err != nil {
+		return err
+	}
+	filename := filepath.Join(fm.path, username)
+	return os.WriteFile(filename, pwd[:], 0600)
+}
+
+func (us UserStore) Delete(name string) error {
+	// TODO: GC user files here?
+	filename := filepath.Join(us.path, name)
+	return os.Remove(filename)
 }

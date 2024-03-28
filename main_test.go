@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -30,8 +29,7 @@ func newTestServerWithUsers(t *testing.T, users map[string][64]byte) http.Handle
 	secret := generateSecret()
 
 	srv, _, err := createServer(log, []string{
-		"--fs_root", filepath.Join(dir, "fs"),
-		"--users_path", filepath.Join(dir, "users.json"),
+		"--data_dir", dir,
 		"--root_uuid", rootUUID.String(),
 	}, func(s string) string {
 		if s == "ARCHIIV_SECRET" {
@@ -188,9 +186,9 @@ func TestLogin(t *testing.T) {
 
 func TestWhoami(t *testing.T) {
 	t.Parallel()
-	srv := newTestServerWithUsers(t, map[string][64]byte{"matúš": hashPassword("kadit")})
+	srv := newTestServerWithUsers(t, map[string][64]byte{"matuush": hashPassword("kadit")})
 
-	token := loginHelper(t, srv, "matúš", "kadit")
+	token := loginHelper(t, srv, "matuush", "kadit")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/whoami", strings.NewReader(""))
 	req.Header.Add("Authorization", token)
@@ -199,5 +197,5 @@ func TestWhoami(t *testing.T) {
 	res := w.Result()
 
 	expectStatusCode(t, res, http.StatusOK)
-	expectBody(t, res, "{\"ok\":true,\"data\":{\"name\":\"matúš\"}}\n")
+	expectBody(t, res, "{\"ok\":true,\"data\":{\"name\":\"matuush\"}}\n")
 }

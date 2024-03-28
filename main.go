@@ -37,12 +37,15 @@ func createServer(log *slog.Logger, args []string, env func(string) string) (htt
 		return nil, config{}, fmt.Errorf("get config: %w", err)
 	}
 
-	users, err := user.LoadUsers(conf.usersPath)
+	usersDir := filepath.Join(conf.dataDir, "users")
+	filesDir := filepath.Join(conf.dataDir, "files")
+
+	users, err := user.NewUserStore(usersDir)
 	if err != nil {
-		return nil, config{}, fmt.Errorf("load users: %w", err)
+		return nil, config{}, fmt.Errorf("new user store: %w", err)
 	}
 
-	files, err := fs.NewFs(conf.rootUUID, conf.fsRoot)
+	files, err := fs.NewFs(conf.rootUUID, filesDir)
 	if err != nil {
 		return nil, config{}, fmt.Errorf("new fs: %w", err)
 	}
@@ -62,12 +65,11 @@ func createServer(log *slog.Logger, args []string, env func(string) string) (htt
 }
 
 type config struct {
-	host      string
-	port      string
-	secret    string
-	usersPath string
-	fsRoot    string
-	rootUUID  uuid.UUID
+	host     string
+	port     string
+	secret   string
+	dataDir  string
+	rootUUID uuid.UUID
 }
 
 func getConfig(args []string, env func(string) string) (conf config, err error) {
@@ -75,8 +77,7 @@ func getConfig(args []string, env func(string) string) (conf config, err error) 
 
 	flags.StringVar(&conf.host, "host", "localhost", "")
 	flags.StringVar(&conf.port, "port", "8275", "")
-	flags.StringVar(&conf.fsRoot, "fs_root", "", "")
-	flags.StringVar(&conf.usersPath, "users_path", "", "")
+	flags.StringVar(&conf.dataDir, "data_dir", "", "")
 	var rootUUIDString string
 	flags.StringVar(&rootUUIDString, "root_uuid", "", "")
 
@@ -86,13 +87,8 @@ func getConfig(args []string, env func(string) string) (conf config, err error) 
 		return
 	}
 
-	if !filepath.IsAbs(conf.fsRoot) {
-		err = fmt.Errorf("fs root must be absolute path (is %#v)", conf.fsRoot)
-		return
-	}
-
-	if !filepath.IsAbs(conf.usersPath) {
-		err = fmt.Errorf("users path must be absolute path (is %#v)", conf.usersPath)
+	if !filepath.IsAbs(conf.dataDir) {
+		err = fmt.Errorf("data dir must be absolute path (is %#v)", conf.dataDir)
 		return
 	}
 

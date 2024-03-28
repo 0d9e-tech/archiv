@@ -28,12 +28,18 @@ func validateToken(secret, token string) bool {
 }
 
 func login(name string, pwd [64]byte, secret string, userStore user.UserStore) (ok bool, token string) {
-	if !userStore.CheckPassword(name, pwd) {
+	correctPwd, err := userStore.Get(name)
+	if err != nil {
 		ok = false
 		return
 	}
 
-	token, err := sign(name, secret)
+	if correctPwd != pwd {
+		ok = false
+		return
+	}
+
+	token, err = sign(name, secret)
 	if err != nil {
 		ok = false
 		return
