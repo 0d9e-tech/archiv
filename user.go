@@ -1,6 +1,4 @@
-// Package user manipulates the users directory and provides a simple API for
-// the endpoints
-package user
+package main
 
 import (
 	"fmt"
@@ -12,17 +10,17 @@ import (
 // All user data is stored in a directory. Each user has a file named after
 // their username. Username has to be [A-Za-z0-9_-]+
 
-type UserStore struct {
+type userStore struct {
 	// path of the users directory
 	path string
 }
 
-func NewUserStore(path string) (us UserStore, err error) {
+func newUserStore(path string) (us userStore, err error) {
 	path = filepath.Clean(path)
 	if !filepath.IsAbs(path) {
 		err = fmt.Errorf("users directory has to be absolute path (is: %v)", path)
 	} else {
-		us = UserStore{path: path}
+		us = userStore{path: path}
 	}
 	return
 }
@@ -36,7 +34,7 @@ func usernameIsSane(username string) error {
 	return nil
 }
 
-func (fm *UserStore) Get(username string) (pwd [64]byte, err error) {
+func (fm *userStore) userPassword(username string) (pwd [64]byte, err error) {
 	if err = usernameIsSane(username); err != nil {
 		return
 	}
@@ -52,7 +50,7 @@ func (fm *UserStore) Get(username string) (pwd [64]byte, err error) {
 	return
 }
 
-func (fm *UserStore) Set(username string, pwd [64]byte) error {
+func (fm *userStore) setUserPassword(username string, pwd [64]byte) error {
 	if err := usernameIsSane(username); err != nil {
 		return err
 	}
@@ -60,7 +58,7 @@ func (fm *UserStore) Set(username string, pwd [64]byte) error {
 	return os.WriteFile(filename, pwd[:], 0600)
 }
 
-func (us UserStore) Delete(name string) error {
+func (us userStore) deleteUser(name string) error {
 	// TODO: GC user files here?
 	filename := filepath.Join(us.path, name)
 	return os.Remove(filename)

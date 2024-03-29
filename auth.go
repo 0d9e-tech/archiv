@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archiiv/user"
 	"net/http"
 	"time"
 )
@@ -27,8 +26,8 @@ func validateToken(secret, token string) bool {
 	return err == nil
 }
 
-func login(name string, pwd [64]byte, secret string, userStore user.UserStore) (ok bool, token string) {
-	correctPwd, err := userStore.Get(name)
+func login(name string, pwd [64]byte, secret string, userStore userStore) (ok bool, token string) {
+	correctPwd, err := userStore.userPassword(name)
 	if err != nil {
 		ok = false
 		return

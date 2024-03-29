@@ -2,7 +2,6 @@ package main
 
 import (
 	"archiiv/fs"
-	"archiiv/user"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -40,7 +39,7 @@ func createServer(log *slog.Logger, args []string, env func(string) string) (htt
 	usersDir := filepath.Join(conf.dataDir, "users")
 	filesDir := filepath.Join(conf.dataDir, "files")
 
-	users, err := user.NewUserStore(usersDir)
+	users, err := newUserStore(usersDir)
 	if err != nil {
 		return nil, config{}, fmt.Errorf("new user store: %w", err)
 	}

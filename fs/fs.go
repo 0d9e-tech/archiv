@@ -67,7 +67,7 @@ type Fs struct {
 	basePath string
 }
 
-func (fs *Fs) getRecord(u uuid.UUID) (*record, error) {
+func (fs *Fs) record(u uuid.UUID) (*record, error) {
 	fs.lock.RLock()
 	defer fs.lock.Unlock()
 	r, e := fs.records[u]
@@ -192,7 +192,7 @@ func (fs *Fs) GetChildren(u uuid.UUID) ([]uuid.UUID, error) {
 }
 
 func (fs *Fs) Mkdir(parentUUID uuid.UUID, name string) (uuid.UUID, error) {
-	parent, err := fs.getRecord(parentUUID)
+	parent, err := fs.record(parentUUID)
 	if err != nil {
 		return uuid.UUID{}, nil
 	}
@@ -202,7 +202,7 @@ func (fs *Fs) Mkdir(parentUUID uuid.UUID, name string) (uuid.UUID, error) {
 }
 
 func (fs *Fs) Touch(parentUUID uuid.UUID, name string) (uuid.UUID, error) {
-	parent, err := fs.getRecord(parentUUID)
+	parent, err := fs.record(parentUUID)
 	if err != nil {
 		return uuid.UUID{}, err
 	}
@@ -212,7 +212,7 @@ func (fs *Fs) Touch(parentUUID uuid.UUID, name string) (uuid.UUID, error) {
 }
 
 func (fs *Fs) Unmount(parentUUID uuid.UUID, childUUID uuid.UUID) error {
-	parent, err := fs.getRecord(parentUUID)
+	parent, err := fs.record(parentUUID)
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ func (fs *Fs) Unmount(parentUUID uuid.UUID, childUUID uuid.UUID) error {
 		return err
 	}
 
-	child, err := fs.getRecord(childUUID)
+	child, err := fs.record(childUUID)
 	if err != nil {
 		return err
 	}
@@ -247,12 +247,12 @@ func (fs *Fs) Unmount(parentUUID uuid.UUID, childUUID uuid.UUID) error {
 }
 
 func (fs *Fs) Mount(parent uuid.UUID, newChild uuid.UUID) error {
-	child, err := fs.getRecord(newChild)
+	child, err := fs.record(newChild)
 	if err != nil {
 		return err
 	}
 
-	rec, err := fs.getRecord(parent)
+	rec, err := fs.record(parent)
 	if err != nil {
 		return err
 	}
