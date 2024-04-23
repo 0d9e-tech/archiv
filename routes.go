@@ -25,7 +25,7 @@ func addRoutes(
 	mux.Handle("POST /api/v1/relogin", http.NotFoundHandler()) // generates a new session token given old token
 	mux.Handle("GET /api/v1/whoami", requireLogin(secret, log, handleWhoami(secret, log)))
 	mux.Handle("POST /api/v1/delete/{username}", adminOnly(secret, log, handleDeleteUser(secret, log, userStore)))
-	mux.Handle("POST /api/v1/create/{username}/{password}", http.NotFoundHandler())
+	mux.Handle("POST /api/v1/create/{username}/{password}", adminOnly(secret, log, http.NotFoundHandler()))
 
 	mux.Handle("/", http.NotFoundHandler())
 }

@@ -93,14 +93,17 @@ func expectStringLooksLikeToken(t *testing.T, token string) {
 	}
 }
 
-func hit(srv http.Handler, method, target string, body io.Reader) *http.Response {
+func hit(srv http.Handler, method, target, token string, body io.Reader) *http.Response {
 	req := httptest.NewRequest(method, target, body)
+	if token != "" {
+		req.Header.Add("Authorization", token)
+	}
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	return w.Result()
 }
 
-func hitPost(t *testing.T, srv http.Handler, target string, body any) *http.Response {
+func hitPost(t *testing.T, srv http.Handler, target, token string, body any) *http.Response {
 	var buf bytes.Buffer
 
 	err := json.NewEncoder(&buf).Encode(body)
@@ -108,14 +111,11 @@ func hitPost(t *testing.T, srv http.Handler, target string, body any) *http.Resp
 		t.Errorf("failed to encode post body: %v", err)
 	}
 
-	return hit(srv, http.MethodPost, "/api/v1/login", &buf)
+	return hit(srv, http.MethodPost, target, token, &buf)
 }
 
-func hitGet(srv http.Handler, target string) *http.Response {
-	req := httptest.NewRequest(http.MethodGet, target, strings.NewReader(""))
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	return w.Result()
+func hitGet(srv http.Handler, target, token string) *http.Response {
+	return hit(srv, http.MethodGet, target, token, strings.NewReader(""))
 }
 
 type loginRequest struct {
@@ -124,7 +124,7 @@ type loginRequest struct {
 }
 
 func loginHelper(t *testing.T, srv http.Handler, username, pwd string) string {
-	res := hitPost(t, srv, "/api/v1/login", loginRequest{Username: username, Password: hashPassword(pwd)})
+	res := hitPost(t, srv, "/api/v1/login", "", loginRequest{Username: username, Password: hashPassword(pwd)})
 
 	type LoginResponse struct {
 		Ok   bool `json:"ok"`
@@ -143,7 +143,7 @@ func TestWhoamiNeedsLogin(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t)
 
-	res := hitGet(srv, "/api/v1/whoami")
+	res := hitGet(srv, "/api/v1/whoami", "")
 	expectFail(t, res, http.StatusUnauthorized, "401 unauthorized")
 }
 
@@ -151,7 +151,7 @@ func TestRootReturnsNotFound(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t)
 
-	res := hitGet(srv, "/")
+	res := hitGet(srv, "/", "")
 	assert.Equal(t, http.StatusNotFound, res.StatusCode)
 	assert.Equal(t, "404 page not found\n", getBody(t, res))
 }
@@ -162,10 +162,10 @@ func TestLogin(t *testing.T) {
 		"prokop": hashPassword("catboy123"),
 	})
 
-	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("eek")}), http.StatusForbidden, "wrong name or password")
-	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("uuhk")}), http.StatusForbidden, "wrong name or password")
-	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "marek", Password: hashPassword("catboy123")}), http.StatusForbidden, "wrong name or password")
-	res := hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("catboy123")})
+	expectFail(t, hitPost(t, srv, "/api/v1/login", "", loginRequest{Username: "prokop", Password: hashPassword("eek")}), http.StatusForbidden, "wrong name or password")
+	expectFail(t, hitPost(t, srv, "/api/v1/login", "", loginRequest{Username: "prokop", Password: hashPassword("uuhk")}), http.StatusForbidden, "wrong name or password")
+	expectFail(t, hitPost(t, srv, "/api/v1/login", "", loginRequest{Username: "marek", Password: hashPassword("catboy123")}), http.StatusForbidden, "wrong name or password")
+	res := hitPost(t, srv, "/api/v1/login", "", loginRequest{Username: "prokop", Password: hashPassword("catboy123")})
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	response := decodeResponse[struct {
 		Ok   bool `json:"ok"`
@@ -178,18 +178,23 @@ func TestLogin(t *testing.T) {
 	expectStringLooksLikeToken(t, response.Data.Token)
 }
 
+func bodylessRequest(t *testing.T, srv http.Handler, method, target, token string) *http.Response {
+	req := httptest.NewRequest(http.MethodGet, target, strings.NewReader(""))
+	if token != "" {
+		req.Header.Add("Authorization", token)
+	}
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	return w.Result()
+}
+
 func TestWhoami(t *testing.T) {
 	t.Parallel()
 	srv := newTestServerWithUsers(t, map[string][64]byte{"matuush": hashPassword("kadit")})
 
 	token := loginHelper(t, srv, "matuush", "kadit")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/whoami", strings.NewReader(""))
-	req.Header.Add("Authorization", token)
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	res := w.Result()
-
+	res := bodylessRequest(t, srv, http.MethodGet, "/api/v1/whoami", token)
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, "{\"ok\":true,\"data\":{\"name\":\"matuush\"}}\n", getBody(t, res))
 }
@@ -201,36 +206,22 @@ func TestDelete(t *testing.T) {
 		"admin":   hashPassword("heslo123")})
 
 	token := loginHelper(t, srv, "matuush", "kadit")
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/whoami", strings.NewReader(""))
-	req.Header.Add("Authorization", token)
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	res := w.Result()
+
+	res := hitGet(srv, "/api/v1/whoami", token)
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, "{\"ok\":true,\"data\":{\"name\":\"matuush\"}}\n", getBody(t, res))
 
 	adminToken := loginHelper(t, srv, "admin", "heslo123")
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/whoami", strings.NewReader(""))
-	req.Header.Add("Authorization", adminToken)
-	w = httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	res = w.Result()
+
+	res = hitGet(srv, "/api/v1/whoami", adminToken)
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, "{\"ok\":true,\"data\":{\"name\":\"admin\"}}\n", getBody(t, res))
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/delete/matuush", strings.NewReader(""))
-	req.Header.Add("Authorization", token)
-	w = httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	res = w.Result()
+	res = hitPost(t, srv, "/api/v1/delete/matuush", token, strings.NewReader(""))
 	assert.Equal(t, http.StatusUnauthorized, res.StatusCode)
 	assert.Equal(t, "{\"ok\":false,\"error\":\"401 unauthorized\"}\n", getBody(t, res))
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/delete/matuush", strings.NewReader(""))
-	req.Header.Add("Authorization", adminToken)
-	w = httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	res = w.Result()
+	res = hitPost(t, srv, "/api/v1/delete/matuush", adminToken, strings.NewReader(""))
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, "{\"ok\":true}\n", getBody(t, res))
 }
