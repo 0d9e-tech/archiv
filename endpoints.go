@@ -32,6 +32,18 @@ func logAccesses(log *slog.Logger, h http.Handler) http.Handler {
 	})
 }
 
+func adminOnly(secret string, log *slog.Logger, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if validateToken(secret, getSessionToken(r)) {
+			if getUsername(r, secret) == "admin" {
+				h.ServeHTTP(w, r)
+				return
+			}
+		}
+		sendError(log, w, http.StatusUnauthorized, "401 unauthorized")
+	})
+}
+
 func requireLogin(secret string, log *slog.Logger, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := getSessionToken(r)
@@ -266,6 +278,20 @@ func handleUnmount(fs *fs.Fs, log *slog.Logger) http.Handler {
 		e = fs.Unmount(parentID, childID)
 		if e != nil {
 			sendError(log, w, http.StatusInternalServerError, fmt.Sprintf("parse id: %v", e))
+			return
+		}
+
+		sendOK(log, w, nil)
+	})
+}
+
+func handleDeleteUser(secret string, log *slog.Logger, userStore userStore) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetUser := r.PathValue("username")
+		err := userStore.deleteUser(targetUser)
+
+		if err != nil {
+			sendError(log, w, http.StatusNotFound, "username not found")
 			return
 		}
 

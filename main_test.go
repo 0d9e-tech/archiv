@@ -193,3 +193,44 @@ func TestWhoami(t *testing.T) {
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, "{\"ok\":true,\"data\":{\"name\":\"matuush\"}}\n", getBody(t, res))
 }
+
+func TestDelete(t *testing.T) {
+	t.Parallel()
+	srv := newTestServerWithUsers(t, map[string][64]byte{
+		"matuush": hashPassword("kadit"),
+		"admin":   hashPassword("heslo123")})
+
+	token := loginHelper(t, srv, "matuush", "kadit")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/whoami", strings.NewReader(""))
+	req.Header.Add("Authorization", token)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	res := w.Result()
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, "{\"ok\":true,\"data\":{\"name\":\"matuush\"}}\n", getBody(t, res))
+
+	adminToken := loginHelper(t, srv, "admin", "heslo123")
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/whoami", strings.NewReader(""))
+	req.Header.Add("Authorization", adminToken)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	res = w.Result()
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, "{\"ok\":true,\"data\":{\"name\":\"admin\"}}\n", getBody(t, res))
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/delete/matuush", strings.NewReader(""))
+	req.Header.Add("Authorization", token)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	res = w.Result()
+	assert.Equal(t, http.StatusUnauthorized, res.StatusCode)
+	assert.Equal(t, "{\"ok\":false,\"error\":\"401 unauthorized\"}\n", getBody(t, res))
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/delete/matuush", strings.NewReader(""))
+	req.Header.Add("Authorization", adminToken)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	res = w.Result()
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, "{\"ok\":true}\n", getBody(t, res))
+}
