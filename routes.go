@@ -13,17 +13,19 @@ func addRoutes(
 	userStore userStore,
 	fileStore *fs.Fs,
 ) {
-	mux.Handle("POST /api/v1/login", handleLogin(secret, log, userStore))
-	//mux.Handle("POST /api/v1/refresh-token", handleSessionTokenRefresh(secret, log, userStore))
-	mux.Handle("GET /api/v1/whoami", requireLogin(secret, log, handleWhoami(secret, log)))
+	mux.Handle("GET /api/v1/fs/ls/{id}", requireLogin(secret, log, handleLs(fileStore, log)))
+	mux.Handle("GET /api/v1/fs/cat/{id}/{section}", requireLogin(secret, log, handleCat(fileStore, log)))
+	mux.Handle("POST /api/v1/fs/upload/{id}/{section}", requireLogin(secret, log, handleUpload(log, fileStore)))
+	mux.Handle("POST /api/v1/fs/touch/{id}/{name}", requireLogin(secret, log, handleTouch(fileStore, log)))
+	mux.Handle("POST /api/v1/fs/mkdir/{id}/{name}", requireLogin(secret, log, handleMkdir(fileStore, log)))
+	mux.Handle("POST /api/v1/fs/mount/{parentID}/{childID}", requireLogin(secret, log, handleMount(fileStore, log)))
+	mux.Handle("POST /api/v1/fs/unmount/{parentID}/{childID}", requireLogin(secret, log, handleUnmount(fileStore, log)))
 
-	mux.Handle("GET /api/v1/fs/ls/{uuid}", requireLogin(secret, log, handleLs(fileStore, log)))
-	mux.Handle("GET /api/v1/fs/cat/{uuid}/{section}", requireLogin(secret, log, handleCat(fileStore, log)))
-	mux.Handle("POST /api/v1/fs/upload/{uuid}/{section}", requireLogin(secret, log, handleUpload(log, fileStore)))
-	mux.Handle("POST /api/v1/fs/touch/{uuid}/{name}", requireLogin(secret, log, handleTouch(fileStore, log)))
-	mux.Handle("POST /api/v1/fs/mkdir/{uuid}/{name}", requireLogin(secret, log, handleMkdir(fileStore, log)))
-	mux.Handle("POST /api/v1/fs/mount/{parentUUID}/{childUUID}", requireLogin(secret, log, handleMount(fileStore, log)))
-	mux.Handle("POST /api/v1/fs/unmount/{parentUUID}/{childUUID}", requireLogin(secret, log, handleUnmount(fileStore, log)))
+	mux.Handle("POST /api/v1/account/login", handleLogin(secret, log, userStore))
+	mux.Handle("POST /api/v1/account/relogin", http.NotFoundHandler()) // generates a new session token given old token
+	mux.Handle("GET /api/v1/account/whoami", requireLogin(secret, log, handleWhoami(secret, log)))
+	mux.Handle("POST /api/v1/account/delete/{username}", http.NotFoundHandler())
+	mux.Handle("POST /api/v1/account/create/{username}/{password}", http.NotFoundHandler())
 
 	mux.Handle("/", http.NotFoundHandler())
 }

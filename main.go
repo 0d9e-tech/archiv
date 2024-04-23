@@ -2,6 +2,7 @@ package main
 
 import (
 	"archiiv/fs"
+	"archiiv/id"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -10,8 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 func main() {
@@ -44,7 +43,7 @@ func createServer(log *slog.Logger, args []string, env func(string) string) (htt
 		return nil, config{}, fmt.Errorf("new user store: %w", err)
 	}
 
-	files, err := fs.NewFs(conf.rootUUID, filesDir)
+	files, err := fs.NewFs(conf.rootID, filesDir)
 	if err != nil {
 		return nil, config{}, fmt.Errorf("new fs: %w", err)
 	}
@@ -64,11 +63,11 @@ func createServer(log *slog.Logger, args []string, env func(string) string) (htt
 }
 
 type config struct {
-	host     string
-	port     string
-	secret   string
-	dataDir  string
-	rootUUID uuid.UUID
+	host    string
+	port    string
+	secret  string
+	dataDir string
+	rootID  id.ID
 }
 
 func getConfig(args []string, env func(string) string) (conf config, err error) {
@@ -77,8 +76,8 @@ func getConfig(args []string, env func(string) string) (conf config, err error) 
 	flags.StringVar(&conf.host, "host", "localhost", "")
 	flags.StringVar(&conf.port, "port", "8275", "")
 	flags.StringVar(&conf.dataDir, "data_dir", "", "")
-	var rootUUIDString string
-	flags.StringVar(&rootUUIDString, "root_uuid", "", "")
+	var rootIDString string
+	flags.StringVar(&rootIDString, "root_id", "", "")
 
 	err = flags.Parse(args)
 	if err != nil {
@@ -93,9 +92,9 @@ func getConfig(args []string, env func(string) string) (conf config, err error) 
 
 	conf.secret = env("ARCHIIV_SECRET")
 
-	conf.rootUUID, err = uuid.Parse(rootUUIDString)
+	conf.rootID, err = id.Parse(rootIDString)
 	if err != nil {
-		err = fmt.Errorf("uuid parse: %w", err)
+		err = fmt.Errorf("id parse: %w", err)
 		return
 	}
 

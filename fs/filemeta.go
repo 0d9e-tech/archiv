@@ -3,7 +3,7 @@ package fs
 import (
 	"encoding/json"
 
-	"github.com/google/uuid"
+	"archiiv/id"
 )
 
 const (
@@ -15,7 +15,7 @@ const (
 // FileMeta contains the metadata asociated with each file. It is saved in the
 // 'meta' section
 type FileMeta struct {
-	UUID      uuid.UUID        `json:"uuid"`
+	Id        id.ID            `json:"id"`
 	Type      string           `json:"type"`
 	Perms     map[string]uint8 `json:"perms"`
 	Hooks     []string         `json:"hooks"`
@@ -23,7 +23,7 @@ type FileMeta struct {
 	CreatedAt uint64           `json:"createdAt"`
 }
 
-func ReadFileMeta(fs *Fs, file uuid.UUID) (fm FileMeta, err error) {
+func ReadFileMeta(fs *Fs, file id.ID) (fm FileMeta, err error) {
 	r, err := fs.OpenSection(file, "meta")
 	if err != nil {
 		return
@@ -34,7 +34,7 @@ func ReadFileMeta(fs *Fs, file uuid.UUID) (fm FileMeta, err error) {
 	return
 }
 
-func WriteFileMeta(fs *Fs, file uuid.UUID, fm FileMeta) error {
+func WriteFileMeta(fs *Fs, file id.ID, fm FileMeta) error {
 	w, err := fs.CreateSection(file, "meta")
 	if err != nil {
 		return err

@@ -37,6 +37,7 @@ func encode(w http.ResponseWriter, status int, v any) error {
 	return nil
 }
 
+// decodes the given struct as JSON from the request body
 func decode[T any](r *http.Request) (T, error) {
 	var v T
 

@@ -2,12 +2,12 @@ package main
 
 import (
 	"archiiv/fs"
+	"archiiv/id"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-
-	"github.com/google/uuid"
+	"time"
 )
 
 // Tries to send a error response but if that also fails just logs the error
@@ -44,12 +44,17 @@ func requireLogin(secret string, log *slog.Logger, h http.Handler) http.Handler 
 }
 
 func handleLogin(secret string, log *slog.Logger, userStore userStore) http.Handler {
-	type LoginRequest struct {
+	type loginRequest struct {
 		Username string   `json:"username"`
 		Password [64]byte `json:"password"`
 	}
+
+	type loginResponse struct {
+		Token      string    `json:"token"`
+		ExpireDate time.Time `json:"expireDate"`
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		lr, err := decode[LoginRequest](r)
+		lr, err := decode[loginRequest](r)
 		if err != nil {
 			sendError(log, w, http.StatusBadRequest, "wrong name or password")
 			return
@@ -57,17 +62,14 @@ func handleLogin(secret string, log *slog.Logger, userStore userStore) http.Hand
 
 		ok, token := login(lr.Username, lr.Password, secret, userStore)
 
-		if ok {
-			log.Info("New login", "user", lr.Username)
-			sendOK(log, w, struct {
-				Token string `json:"token"`
-			}{Token: token})
-			return
-		} else {
+		if !ok {
 			log.Info("Failed login", "user", lr.Username)
 			sendError(log, w, http.StatusForbidden, "wrong name or password")
 			return
 		}
+
+		log.Info("New login", "user", lr.Username)
+		sendOK(log, w, loginResponse{Token: token})
 	})
 }
 
@@ -82,11 +84,11 @@ func handleWhoami(secret string, log *slog.Logger) http.Handler {
 
 func handleLs(fs *fs.Fs, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uuidArg := r.PathValue("uuid")
+		idArg := r.PathValue("id")
 
-		id, e := uuid.Parse(uuidArg)
+		id, e := id.Parse(idArg)
 		if e != nil {
-			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
@@ -104,12 +106,12 @@ func handleLs(fs *fs.Fs, log *slog.Logger) http.Handler {
 
 func handleCat(fs *fs.Fs, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uuidArg := r.PathValue("uuid")
+		idArg := r.PathValue("id")
 		sectionArg := r.PathValue("section")
 
-		id, e := uuid.Parse(uuidArg)
+		id, e := id.Parse(idArg)
 		if e != nil {
-			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
@@ -132,19 +134,19 @@ func handleCat(fs *fs.Fs, log *slog.Logger) http.Handler {
 
 func handleUpload(log *slog.Logger, fs *fs.Fs) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uuidArg := r.PathValue("uuid")
+		idArg := r.PathValue("id")
 		sectionArg := r.PathValue("section")
 
-		uuid, e := uuid.Parse(uuidArg)
+		id, e := id.Parse(idArg)
 		if e != nil {
 			log.Error("handleUpload", "error", e)
-			sendError(log, w, http.StatusBadRequest, "invalid uuid")
+			sendError(log, w, http.StatusBadRequest, "invalid id")
 			return
 		}
 
 		// TODO(matěj) check permission
 
-		sectionWriter, e := fs.CreateSection(uuid, sectionArg)
+		sectionWriter, e := fs.CreateSection(id, sectionArg)
 		if e != nil {
 			sendError(log, w, http.StatusInternalServerError, fmt.Sprintf("create section: %v", e))
 			return
@@ -161,16 +163,16 @@ func handleUpload(log *slog.Logger, fs *fs.Fs) http.Handler {
 
 func handleTouch(fs *fs.Fs, log *slog.Logger) http.Handler {
 	type OkResponse struct {
-		NewFileUUID uuid.UUID `json:"new_file_uuid"`
+		NewFileid id.ID `json:"new_file_id"`
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uuidArg := r.PathValue("uuid")
+		idArg := r.PathValue("id")
 		name := r.PathValue("name")
 
-		parentID, e := uuid.Parse(uuidArg)
+		parentID, e := id.Parse(idArg)
 		if e != nil {
-			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
@@ -182,22 +184,22 @@ func handleTouch(fs *fs.Fs, log *slog.Logger) http.Handler {
 			return
 		}
 
-		sendOK(log, w, OkResponse{NewFileUUID: fileID})
+		sendOK(log, w, OkResponse{NewFileid: fileID})
 	})
 }
 
 func handleMkdir(fs *fs.Fs, log *slog.Logger) http.Handler {
 	type OkResponse struct {
-		NewDirUUID uuid.UUID `json:"new_dir_uuid"`
+		NewDirID id.ID `json:"new_dir_id"`
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uuidArg := r.PathValue("uuid")
+		idArg := r.PathValue("id")
 		name := r.PathValue("name")
 
-		id, e := uuid.Parse(uuidArg)
+		id, e := id.Parse(idArg)
 		if e != nil {
-			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
@@ -209,32 +211,32 @@ func handleMkdir(fs *fs.Fs, log *slog.Logger) http.Handler {
 			return
 		}
 
-		sendOK(log, w, OkResponse{NewDirUUID: fileID})
+		sendOK(log, w, OkResponse{NewDirID: fileID})
 	})
 }
 
 func handleMount(fs *fs.Fs, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		parentArg := r.PathValue("parentUUID")
-		childArg := r.PathValue("childUUID")
+		parentArg := r.PathValue("parentID")
+		childArg := r.PathValue("childID")
 
-		parentUUID, e := uuid.Parse(parentArg)
+		parentID, e := id.Parse(parentArg)
 		if e != nil {
-			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
-		childUUID, e := uuid.Parse(childArg)
+		childID, e := id.Parse(childArg)
 		if e != nil {
-			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
 		// TODO(matěj) check permission
 
-		e = fs.Mount(parentUUID, childUUID)
+		e = fs.Mount(parentID, childID)
 		if e != nil {
-			sendError(log, w, http.StatusInternalServerError, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusInternalServerError, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
@@ -244,26 +246,26 @@ func handleMount(fs *fs.Fs, log *slog.Logger) http.Handler {
 
 func handleUnmount(fs *fs.Fs, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		parentArg := r.PathValue("parentUUID")
-		childArg := r.PathValue("childUUID")
+		parentArg := r.PathValue("parentID")
+		childArg := r.PathValue("childID")
 
-		parentUUID, e := uuid.Parse(parentArg)
+		parentID, e := id.Parse(parentArg)
 		if e != nil {
-			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
-		childUUID, e := uuid.Parse(childArg)
+		childID, e := id.Parse(childArg)
 		if e != nil {
-			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusBadRequest, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 
 		// TODO(matěj) check permission
 
-		e = fs.Unmount(parentUUID, childUUID)
+		e = fs.Unmount(parentID, childID)
 		if e != nil {
-			sendError(log, w, http.StatusInternalServerError, fmt.Sprintf("parse uuid: %v", e))
+			sendError(log, w, http.StatusInternalServerError, fmt.Sprintf("parse id: %v", e))
 			return
 		}
 

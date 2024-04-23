@@ -5,13 +5,13 @@ package fs
 // the directory tree is modeled using the Records structs
 // they are reference counted and thus are forbidden to form cycles
 //
-// Records are saved as $fs_root/$uuid
+// Records are saved as $fs_root/$id
 //
-// Records contain sections saved as $fs_root/$uuid.$section The file payload
+// Records contain sections saved as $fs_root/$id.$section The file payload
 // is saved in the 'data' section. metadata is in 'meta'. hooks can create own
 // sections
 //
-// External function, which take UUIDs as inputs are thread safe. Internal
+// External function, which take IDs as inputs are thread safe. Internal
 // functions, which take pointers to records instead are not thread safe.
 
 import (
@@ -25,15 +25,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/uuid"
+	"archiiv/id"
 )
 
 const (
 	sectionPattern      = `[a-zA-Z0-9_-]+`
-	uuidPattern         = `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
-	fileInFsRootPattern = uuidPattern + `(\.` + sectionPattern + `)?`
+	idPattern           = `[1-9A-HJ-NP-Za-km-z]{22}`
+	fileInFsRootPattern = idPattern + `(\.` + sectionPattern + `)?`
 
-	onlyUUIDPattern         = `^` + uuidPattern + `$`
+	onlyIDPattern           = `^` + idPattern + `$`
 	onlyFileInFsRootPattern = `^` + fileInFsRootPattern + `$`
 	onlySectionPattern      = `^` + sectionPattern + `$`
 )
@@ -44,12 +44,12 @@ var (
 )
 
 type record struct {
-	Children []uuid.UUID `json:"children,omitempty"`
-	IsDir    bool        `json:"is_dir"`
-	Name     string      `json:"name"`
-	id       uuid.UUID   `json:"-"`
-	refs     uint        `json:"-"`
-	mutex    sync.Mutex  `json:"-"`
+	Children []id.ID    `json:"children,omitempty"`
+	IsDir    bool       `json:"is_dir"`
+	Name     string     `json:"name"`
+	id       id.ID      `json:"-"`
+	refs     uint       `json:"-"`
+	mutex    sync.Mutex `json:"-"`
 }
 
 func (r *record) lock() {
@@ -62,17 +62,17 @@ func (r *record) unlock() {
 
 type Fs struct {
 	lock     sync.RWMutex
-	records  map[uuid.UUID]*record
-	root     uuid.UUID
+	records  map[id.ID]*record
+	root     id.ID
 	basePath string
 }
 
-func (fs *Fs) record(u uuid.UUID) (*record, error) {
+func (fs *Fs) record(u id.ID) (*record, error) {
 	fs.lock.RLock()
 	defer fs.lock.Unlock()
 	r, e := fs.records[u]
 	if e {
-		return nil, errors.New("uuid doesn't exist")
+		return nil, errors.New("id doesn't exist")
 	}
 	return r, nil
 }
@@ -101,8 +101,8 @@ func (fs *Fs) writeRecord(r *record) error {
 
 func (fs *Fs) newRecord(parent *record, name string, dir bool) (*record, error) {
 	child := new(record)
-	child.Children = []uuid.UUID{}
-	child.id = uuid.New()
+	child.Children = []id.ID{}
+	child.id = id.New()
 	child.Name = name
 	child.refs = 1
 	child.IsDir = dir
@@ -121,7 +121,7 @@ func (fs *Fs) newRecord(parent *record, name string, dir bool) (*record, error) 
 }
 
 // return new slice that does not contain v
-func removeUUID(s []uuid.UUID, v uuid.UUID) ([]uuid.UUID, error) {
+func removeID(s []id.ID, v id.ID) ([]id.ID, error) {
 	i := 0
 	pos := -1
 	for ; i < len(s); i++ {
@@ -133,12 +133,12 @@ func removeUUID(s []uuid.UUID, v uuid.UUID) ([]uuid.UUID, error) {
 
 	for ; i < len(s); i++ {
 		if s[i] == v {
-			return s, errors.New("duplicite uuid")
+			return s, errors.New("duplicite id")
 		}
 	}
 
 	if pos == -1 {
-		return s, errors.New("uuid not found")
+		return s, errors.New("id not found")
 	}
 
 	// swap remove
@@ -153,7 +153,7 @@ func checkSectionNameSanity(section string) error {
 	return nil
 }
 
-func (fs *Fs) getSectionFileName(file uuid.UUID, section string) string {
+func (fs *Fs) getSectionFileName(file id.ID, section string) string {
 	return fs.path(file.String() + "." + section)
 }
 
@@ -183,36 +183,36 @@ func (fs *Fs) deleteRecord(r *record) error {
 	return nil
 }
 
-func (fs *Fs) GetRoot() uuid.UUID {
+func (fs *Fs) GetRoot() id.ID {
 	return fs.root
 }
 
-func (fs *Fs) GetChildren(u uuid.UUID) ([]uuid.UUID, error) {
+func (fs *Fs) GetChildren(u id.ID) ([]id.ID, error) {
 	return fs.records[u].Children, nil
 }
 
-func (fs *Fs) Mkdir(parentUUID uuid.UUID, name string) (uuid.UUID, error) {
-	parent, err := fs.record(parentUUID)
+func (fs *Fs) Mkdir(parentID id.ID, name string) (id.ID, error) {
+	parent, err := fs.record(parentID)
 	if err != nil {
-		return uuid.UUID{}, nil
+		return id.ID{}, nil
 	}
 
 	r, err := fs.newRecord(parent, name, true)
 	return r.id, err
 }
 
-func (fs *Fs) Touch(parentUUID uuid.UUID, name string) (uuid.UUID, error) {
-	parent, err := fs.record(parentUUID)
+func (fs *Fs) Touch(parentID id.ID, name string) (id.ID, error) {
+	parent, err := fs.record(parentID)
 	if err != nil {
-		return uuid.UUID{}, err
+		return id.ID{}, err
 	}
 
 	r, err := fs.newRecord(parent, name, false)
 	return r.id, err
 }
 
-func (fs *Fs) Unmount(parentUUID uuid.UUID, childUUID uuid.UUID) error {
-	parent, err := fs.record(parentUUID)
+func (fs *Fs) Unmount(parentID id.ID, childID id.ID) error {
+	parent, err := fs.record(parentID)
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func (fs *Fs) Unmount(parentUUID uuid.UUID, childUUID uuid.UUID) error {
 	parent.lock()
 	defer parent.unlock()
 
-	parent.Children, err = removeUUID(parent.Children, childUUID)
+	parent.Children, err = removeID(parent.Children, childID)
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ func (fs *Fs) Unmount(parentUUID uuid.UUID, childUUID uuid.UUID) error {
 		return err
 	}
 
-	child, err := fs.record(childUUID)
+	child, err := fs.record(childID)
 	if err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func (fs *Fs) Unmount(parentUUID uuid.UUID, childUUID uuid.UUID) error {
 	return nil
 }
 
-func (fs *Fs) Mount(parent uuid.UUID, newChild uuid.UUID) error {
+func (fs *Fs) Mount(parent id.ID, newChild id.ID) error {
 	child, err := fs.record(newChild)
 	if err != nil {
 		return err
@@ -261,7 +261,7 @@ func (fs *Fs) Mount(parent uuid.UUID, newChild uuid.UUID) error {
 
 	for _, child := range rec.Children {
 		if child == newChild {
-			return errors.New("child with this uuid already exists")
+			return errors.New("child with this id already exists")
 		}
 	}
 
@@ -274,30 +274,30 @@ func (fs *Fs) Mount(parent uuid.UUID, newChild uuid.UUID) error {
 	return fs.writeRecord(rec)
 }
 
-func (fs *Fs) OpenSection(uuid uuid.UUID, section string) (io.ReadCloser, error) {
+func (fs *Fs) OpenSection(id id.ID, section string) (io.ReadCloser, error) {
 	err := checkSectionNameSanity(section)
 	if err != nil {
 		return nil, err
 	}
-	return os.Open(fs.getSectionFileName(uuid, section))
+	return os.Open(fs.getSectionFileName(id, section))
 }
 
-func (fs *Fs) CreateSection(uuid uuid.UUID, section string) (io.WriteCloser, error) {
+func (fs *Fs) CreateSection(id id.ID, section string) (io.WriteCloser, error) {
 	err := checkSectionNameSanity(section)
 	if err != nil {
 		return nil, err
 	}
 
-	return os.Create(fs.getSectionFileName(uuid, section))
+	return os.Create(fs.getSectionFileName(id, section))
 }
 
-func (fs *Fs) DeleteSection(uuid uuid.UUID, section string) error {
+func (fs *Fs) DeleteSection(id id.ID, section string) error {
 	err := checkSectionNameSanity(section)
 	if err != nil {
 		return err
 	}
 
-	return os.Remove(fs.getSectionFileName(uuid, section))
+	return os.Remove(fs.getSectionFileName(id, section))
 }
 
 func (fs *Fs) loadRecords() error {
@@ -316,16 +316,16 @@ func (fs *Fs) loadRecords() error {
 		name := e.Name()
 
 		if !onlyFileInFsRootPatternRegex.MatchString(name) {
-			return errors.New("garbage file in fs root")
+			return fmt.Errorf("garbage file in fs root: %s", name)
 		}
 
-		if len(name) == 36 {
+		if len(name) == 22 {
 			recordFiles = append(recordFiles, name)
-		}
+		} // else { TODO: file sections }
 	}
 
 	for _, recordName := range recordFiles {
-		u, err := uuid.Parse(recordName)
+		u, err := id.Parse(recordName)
 		if err != nil {
 			return err
 		}
@@ -350,16 +350,16 @@ func (fs *Fs) loadRecords() error {
 	return nil
 }
 
-func checkLoadedRecordsAreSane(map[uuid.UUID]*record) error {
+func checkLoadedRecordsAreSane(map[id.ID]*record) error {
 	// TODO(prokop)
 	return nil
 }
 
-func NewFs(root uuid.UUID, basePath string) (fs *Fs, err error) {
+func NewFs(root id.ID, basePath string) (fs *Fs, err error) {
 	fs = new(Fs)
 	fs.basePath = basePath
 	fs.root = root
-	fs.records = make(map[uuid.UUID]*record)
+	fs.records = make(map[id.ID]*record)
 
 	err = fs.loadRecords()
 	if err != nil {
@@ -367,7 +367,7 @@ func NewFs(root uuid.UUID, basePath string) (fs *Fs, err error) {
 	}
 
 	if _, c := fs.records[root]; !c {
-		err = errors.New("the root UUID not found in fs")
+		err = errors.New("the root ID not found in fs")
 		return
 	}
 
@@ -380,16 +380,16 @@ func NewFs(root uuid.UUID, basePath string) (fs *Fs, err error) {
 //
 //	dir/
 //	├── files/
-//	│   └── 38b4183d-4df4-43dd-9495-1847083a3662
+//	│   └── WXC2BGKFiiDAjBWbf6wayV
 //	└── users/
 //	    ├── ...
 //	    └── ...
 //
 // Used to setup a server in unittests.
-func InitFsDir(dir string, users map[string][64]byte) (rootUUID uuid.UUID, err error) {
+func InitFsDir(dir string, users map[string][64]byte) (rootID id.ID, err error) {
 	fsDir := filepath.Join(dir, "files")
-	rootUUID = uuid.New()
-	rootUUIDPath := filepath.Join(fsDir, rootUUID.String())
+	rootID = id.New()
+	rootIDPath := filepath.Join(fsDir, rootID.String())
 	usersDir := filepath.Join(dir, "users")
 
 	if err = os.Mkdir(fsDir, 0750); err != nil {
@@ -402,9 +402,9 @@ func InitFsDir(dir string, users map[string][64]byte) (rootUUID uuid.UUID, err e
 		return
 	}
 
-	f, err := os.Create(rootUUIDPath) // #nosec G304: the dir argument is trusted
+	f, err := os.Create(rootIDPath) // #nosec G304: the dir argument is trusted
 	if err != nil {
-		err = fmt.Errorf("create root uuid: %w", err)
+		err = fmt.Errorf("create root id: %w", err)
 		return
 	}
 	defer f.Close()

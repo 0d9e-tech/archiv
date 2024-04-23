@@ -11,6 +11,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func newTestServer(t *testing.T) http.Handler {
@@ -21,7 +24,7 @@ func newTestServerWithUsers(t *testing.T, users map[string][64]byte) http.Handle
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 
 	dir := t.TempDir()
-	rootUUID, err := fs.InitFsDir(dir, users)
+	rootID, err := fs.InitFsDir(dir, users)
 	if err != nil {
 		t.Error(err)
 	}
@@ -30,7 +33,7 @@ func newTestServerWithUsers(t *testing.T, users map[string][64]byte) http.Handle
 
 	srv, _, err := createServer(log, []string{
 		"--data_dir", dir,
-		"--root_uuid", rootUUID.String(),
+		"--root_id", rootID.String(),
 	}, func(s string) string {
 		if s == "ARCHIIV_SECRET" {
 			return secret
@@ -50,38 +53,27 @@ func decodeResponse[T any](t *testing.T, r *http.Response) (v T) {
 	dec.DisallowUnknownFields()
 	err := dec.Decode(&v)
 
-	if err != nil {
-		t.Errorf("failed to decode response %v", err)
-	} else if _, err := dec.Token(); err != io.EOF { // check that there is nothing leaking after the json
-		t.Error("json contains trailing data")
+	assert.NoError(t, err)
+
+	_, err = dec.Token()
+	if assert.Error(t, err) {
+		assert.Equal(t, err, io.EOF)
 	}
 
 	return
 }
 
-func expectEqual[T comparable](t *testing.T, got, expected T, comment string) {
-	if expected != got {
-		t.Errorf("%s should be %#v (is %#v)", comment, expected, got)
-	}
-}
-
-func expectStatusCode(t *testing.T, res *http.Response, expected int) {
-	expectEqual(t, res.StatusCode, expected, "status code")
-}
-
-func expectBody(t *testing.T, res *http.Response, expected string) {
+func getBody(t *testing.T, res *http.Response) string {
 	b, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Errorf("failed to read response body: %v", err)
-	}
-	expectEqual(t, string(b), expected, "response body")
+	assert.NoError(t, err)
+	return string(b)
 }
 
 func expectFail(t *testing.T, res *http.Response, statusCode int, errorMessage string) {
-	expectStatusCode(t, res, statusCode)
+	assert.Equal(t, statusCode, res.StatusCode)
 	b := decodeResponse[responseError](t, res)
-	expectEqual(t, b.Ok, false, "ok field")
-	expectEqual(t, b.Error, errorMessage, "response body")
+	assert.Equal(t, false, b.Ok, false)
+	assert.Equal(t, errorMessage, b.Error)
 }
 
 func expectStringLooksLikeToken(t *testing.T, token string) {
@@ -116,7 +108,7 @@ func hitPost(t *testing.T, srv http.Handler, target string, body any) *http.Resp
 		t.Errorf("failed to encode post body: %v", err)
 	}
 
-	return hit(srv, http.MethodPost, "/api/v1/login", &buf)
+	return hit(srv, http.MethodPost, "/api/v1/account/login", &buf)
 }
 
 func hitGet(srv http.Handler, target string) *http.Response {
@@ -132,12 +124,13 @@ type loginRequest struct {
 }
 
 func loginHelper(t *testing.T, srv http.Handler, username, pwd string) string {
-	res := hitPost(t, srv, "/api/v1/login", loginRequest{Username: username, Password: hashPassword(pwd)})
+	res := hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: username, Password: hashPassword(pwd)})
 
 	type LoginResponse struct {
 		Ok   bool `json:"ok"`
 		Data struct {
-			Token string `json:"token"`
+			Token      string    `json:"token"`
+			ExpireDate time.Time `json:"expireDate"`
 		} `json:"data"`
 	}
 
@@ -150,7 +143,7 @@ func TestWhoamiNeedsLogin(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t)
 
-	res := hitGet(srv, "/api/v1/whoami")
+	res := hitGet(srv, "/api/v1/account/whoami")
 	expectFail(t, res, http.StatusUnauthorized, "401 unauthorized")
 }
 
@@ -159,8 +152,8 @@ func TestRootReturnsNotFound(t *testing.T) {
 	srv := newTestServer(t)
 
 	res := hitGet(srv, "/")
-	expectStatusCode(t, res, http.StatusNotFound)
-	expectBody(t, res, "404 page not found\n")
+	assert.Equal(t, http.StatusNotFound, res.StatusCode)
+	assert.Equal(t, "404 page not found\n", getBody(t, res))
 }
 
 func TestLogin(t *testing.T) {
@@ -169,18 +162,19 @@ func TestLogin(t *testing.T) {
 		"prokop": hashPassword("catboy123"),
 	})
 
-	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("eek")}), http.StatusForbidden, "wrong name or password")
-	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("uuhk")}), http.StatusForbidden, "wrong name or password")
-	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "marek", Password: hashPassword("catboy123")}), http.StatusForbidden, "wrong name or password")
-	res := hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("catboy123")})
-	expectStatusCode(t, res, http.StatusOK)
+	expectFail(t, hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: "prokop", Password: hashPassword("eek")}), http.StatusForbidden, "wrong name or password")
+	expectFail(t, hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: "prokop", Password: hashPassword("uuhk")}), http.StatusForbidden, "wrong name or password")
+	expectFail(t, hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: "marek", Password: hashPassword("catboy123")}), http.StatusForbidden, "wrong name or password")
+	res := hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: "prokop", Password: hashPassword("catboy123")})
+	assert.Equal(t, http.StatusOK, res.StatusCode)
 	response := decodeResponse[struct {
 		Ok   bool `json:"ok"`
 		Data struct {
-			Token string `json:"token"`
+			Token      string    `json:"token"`
+			ExpireDate time.Time `json:"expireDate"`
 		} `json:"data"`
 	}](t, res)
-	expectEqual(t, response.Ok, true, "ok field of the response")
+	assert.Equal(t, true, response.Ok)
 	expectStringLooksLikeToken(t, response.Data.Token)
 }
 
@@ -190,12 +184,12 @@ func TestWhoami(t *testing.T) {
 
 	token := loginHelper(t, srv, "matuush", "kadit")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/whoami", strings.NewReader(""))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/whoami", strings.NewReader(""))
 	req.Header.Add("Authorization", token)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	res := w.Result()
 
-	expectStatusCode(t, res, http.StatusOK)
-	expectBody(t, res, "{\"ok\":true,\"data\":{\"name\":\"matuush\"}}\n")
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, "{\"ok\":true,\"data\":{\"name\":\"matuush\"}}\n", getBody(t, res))
 }
