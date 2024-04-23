@@ -108,7 +108,7 @@ func hitPost(t *testing.T, srv http.Handler, target string, body any) *http.Resp
 		t.Errorf("failed to encode post body: %v", err)
 	}
 
-	return hit(srv, http.MethodPost, "/api/v1/account/login", &buf)
+	return hit(srv, http.MethodPost, "/api/v1/login", &buf)
 }
 
 func hitGet(srv http.Handler, target string) *http.Response {
@@ -124,7 +124,7 @@ type loginRequest struct {
 }
 
 func loginHelper(t *testing.T, srv http.Handler, username, pwd string) string {
-	res := hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: username, Password: hashPassword(pwd)})
+	res := hitPost(t, srv, "/api/v1/login", loginRequest{Username: username, Password: hashPassword(pwd)})
 
 	type LoginResponse struct {
 		Ok   bool `json:"ok"`
@@ -143,7 +143,7 @@ func TestWhoamiNeedsLogin(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t)
 
-	res := hitGet(srv, "/api/v1/account/whoami")
+	res := hitGet(srv, "/api/v1/whoami")
 	expectFail(t, res, http.StatusUnauthorized, "401 unauthorized")
 }
 
@@ -162,10 +162,10 @@ func TestLogin(t *testing.T) {
 		"prokop": hashPassword("catboy123"),
 	})
 
-	expectFail(t, hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: "prokop", Password: hashPassword("eek")}), http.StatusForbidden, "wrong name or password")
-	expectFail(t, hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: "prokop", Password: hashPassword("uuhk")}), http.StatusForbidden, "wrong name or password")
-	expectFail(t, hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: "marek", Password: hashPassword("catboy123")}), http.StatusForbidden, "wrong name or password")
-	res := hitPost(t, srv, "/api/v1/account/login", loginRequest{Username: "prokop", Password: hashPassword("catboy123")})
+	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("eek")}), http.StatusForbidden, "wrong name or password")
+	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("uuhk")}), http.StatusForbidden, "wrong name or password")
+	expectFail(t, hitPost(t, srv, "/api/v1/login", loginRequest{Username: "marek", Password: hashPassword("catboy123")}), http.StatusForbidden, "wrong name or password")
+	res := hitPost(t, srv, "/api/v1/login", loginRequest{Username: "prokop", Password: hashPassword("catboy123")})
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	response := decodeResponse[struct {
 		Ok   bool `json:"ok"`
@@ -184,7 +184,7 @@ func TestWhoami(t *testing.T) {
 
 	token := loginHelper(t, srv, "matuush", "kadit")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/whoami", strings.NewReader(""))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/whoami", strings.NewReader(""))
 	req.Header.Add("Authorization", token)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
